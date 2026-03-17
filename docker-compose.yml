@@ -1,0 +1,35 @@
+version: '3.8'
+services:
+  chat-service:
+    build: .
+    ports:
+      - "8086:8086"
+    depends_on:
+      - rabbitmq
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=guest
+      - SPRING_RABBITMQ_PASSWORD=guest
+      # If you switch to Postgres, add DB env vars here
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+  # Uncomment and configure if you want to use Postgres instead of H2
+  #
+#  postgres:
+#    image: postgres:16
+#    environment:
+#      - POSTGRES_DB=chatdb
+#      - POSTGRES_USER=chatuser
+#      - POSTGRES_PASSWORD=chatpass
+#    ports:
+#      - "5432:5432"

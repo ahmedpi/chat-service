@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat STOMP Client</title>
+  <script src="https://cdn.jsdelivr.net/npm/webstomp-client/dist/webstomp.min.js"></script>
+  <style>
+    #chatBox {
+      border: 1px solid #ccc;
+      height: 300px;
+      overflow-y: auto;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: #f7f7f7;
+    }
+    .msg-me {
+      text-align: right;
+    }
+    .msg-me span {
+      background: #dcf8c6;
+      padding: 5px 10px;
+      border-radius: 10px;
+      display: inline-block;
+      margin: 2px 0;
+    }
+    .msg-other {
+      text-align: left;
+    }
+    .msg-other span {
+      background: #fff;
+      padding: 5px 10px;
+      border-radius: 10px;
+      display: inline-block;
+      margin: 2px 0;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <strong>Logged in as:</strong> <span id="currentUser"></span>
+  </div>
+  <div>
+    <label>To User: <input type="text" id="toUser" value="bob"></label>
+    <button id="loadHistoryBtn" type="button">Load History</button>
+  </div>
+  <div id="chatBox"></div>
+  <form id="chatForm">
+    <label>Content: <input type="text" id="content" value="Hello Bob!"></label>
+    <button type="submit">Send</button>
+  </form>
+  <div id="status"></div>
+
+  <script>
+    let senderUsername = null;
+    let client = null;
+
+    // Fetch the logged-in username and set it in the UI
+    fetch('/api/whoami')
+      .then(response => response.text())
+      .then(username => {
+        senderUsername = username;
+        document.getElementById('currentUser').textContent = username;
+        connectWebSocket();
+        loadHistory(); // Load history for default toUser
+      });
+
+    // Connect to WebSocket/STOMP
+    function connectWebSocket() {
+      var ws = new WebSocket('ws://localhost:8086/ws-chat');
+      client = webstomp.over(ws);
+
+      client.connect({}, function(frame) {
+        document.getElementById('status').innerText = 'Connected: ' + frame;
+
+        client.subscribe('/user/queue/messages', function(message) {
+          const msg = JSON.parse(message.body);
+          appendMessage(msg);
+        });
+      }, function(error) {
+        document.getElementById('status').innerText = 'Connection error: ' + error;
+      });
+    }
+
+    // Append a message to the chat box
+    function appendMessage(msg) {
+      const chatBox = document.getElementById('chatBox');
+      const messageDiv = document.createElement('div');
+      if (msg.fromUser === senderUsername) {
+        messageDiv.className = 'msg-me';
+        messageDiv.innerHTML = `<span>You: ${msg.content}</span>`;
+      } else {
+        messageDiv.className = 'msg-other';
+        messageDiv.innerHTML = `<span>${msg.fromUser}: ${msg.content}</span>`;
+      }
+      chatBox.appendChild(messageDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Load chat history for the current user and recipient
+    function loadHistory() {
+      const toUser = document.getElementById('toUser').value;
+      if (!senderUsername || !toUser) return;
+      fetch(`/chat/history/${senderUsername}/${toUser}`)
+        .then(response => response.json())
+        .then(history => {
+          const chatBox = document.getElementById('chatBox');
+          chatBox.innerHTML = ''; // Clear previous messages
+          history.forEach(appendMessage);
+        });
+    }
+
+    // Reload history when recipient changes or button is clicked
+    document.getElementById('toUser').addEventListener('change', loadHistory);
+    document.getElementById('loadHistoryBtn').addEventListener('click', loadHistory);
+
+    // Send chat message
+    document.getElementById('chatForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var toUser = document.getElementById('toUser').value;
+      var content = document.getElementById('content').value;
+      var payload = {
+        fromUser: senderUsername,
+        toUser: toUser,
+        content: content
+      };
+      client.send('/app/chat.send', JSON.stringify(payload), { 'content-type': 'application/json' });
+      document.getElementById('content').value = '';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<script>
+console.log("Chat script loaded!");
+document.addEventListener('DOMContentLoaded', function() {
+  let senderUsername = null;
+  let client = null;
+
+  // Helper: Show error and stop further actions
+  function showAuthError(msg) {
+    const statusElem = document.getElementById('status');
+    if (statusElem) statusElem.innerText = msg;
+  }
+
+  // Fetch the logged-in username and set it in the UI
+  fetch('/api/whoami')
+    .then(response => {
+      if (!response.ok) {
+        // If not authenticated, show message and do not proceed
+        showAuthError('You are not authenticated. Please log in.');
+        return Promise.reject('Not authenticated');
+      }
+      return response.text();
+    })
+    .then(username => {
+      senderUsername = username;
+      const currentUserElem = document.getElementById('currentUser');
+      if (currentUserElem) currentUserElem.textContent = username;
+      populateUserDropdown();
+      connectWebSocket();
+    })
+    .catch(() => {
+      // Already handled above
+    });
+
+  // Populate the receiver dropdown with available users
+  function populateUserDropdown() {
+    fetch('/api/users')
+      .then(response => {
+        if (!response.ok) {
+          showAuthError('Failed to load user list. Please log in.');
+          return Promise.reject('User list fetch failed');
+        }
+        return response.json();
+      })
+      .then(users => {
+        const toUserSelect = document.getElementById('toUser');
+        if (!toUserSelect) return;
+        toUserSelect.innerHTML = '';
+        users.forEach(username => {
+          const option = document.createElement('option');
+          option.value = username;
+          option.textContent = username;
+          toUserSelect.appendChild(option);
+        });
+        // Load history for the first user in the list, if any
+        if (users.length > 0) {
+          loadHistory();
+        }
+      })
+      .catch(() => {});
+  }
+
+  // Connect to WebSocket/STOMP
+  function connectWebSocket() {
+    var ws = new WebSocket('ws://localhost:8086/ws-chat');
+    client = webstomp.over(ws);
+
+    client.connect({}, function(frame) {
+      const statusElem = document.getElementById('status');
+      if (statusElem) statusElem.innerText = 'Connected: ' + frame;
+
+      client.subscribe('/user/queue/messages', function(message) {
+        const msg = JSON.parse(message.body);
+        appendMessage(msg);
+      });
+    }, function(error) {
+      const statusElem = document.getElementById('status');
+      if (statusElem) statusElem.innerText = 'Connection error: ' + error;
+    });
+  }
+
+  // Append a message to the chat box
+  function appendMessage(msg) {
+    const chatBox = document.getElementById('chatBox');
+    if (!chatBox
+) return;
+    const messageDiv = document.createElement('div');
+    if (msg.fromUser === senderUsername) {
+      messageDiv.className = 'msg-me';
+      messageDiv.innerHTML = `<span>You: ${msg.content}</span>`;
+    } else {
+      messageDiv.className = 'msg-other';
+      messageDiv.innerHTML = `<span>${msg.fromUser}: ${msg.content}</span>`;
+    }
+    chatBox.appendChild(messageDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  // Load chat history for the current user and selected recipient
+  function loadHistory() {
+    const toUserSelect = document.getElementById('toUser');
+    const chatBox = document.getElementById('chatBox');
+    if (!toUserSelect || !chatBox || !senderUsername) return;
+    const toUser = toUserSelect.value;
+    if (!toUser) return;
+    fetch(`/chat/history/${senderUsername}/${toUser}`)
+      .then(response => {
+        if (!response.ok) {
+          showAuthError('Failed to load chat history.');
+          return [];
+        }
+        return response.json();
+      })
+      .then(history => {
+        chatBox.innerHTML = ''; // Clear previous messages
+        history.forEach(appendMessage);
+      })
+      .catch(() => {});
+  }
+
+  // Reload history when recipient changes or button is clicked
+  const toUserSelect = document.getElementById('toUser');
+  if (toUserSelect) toUserSelect.addEventListener('change', loadHistory);
+  const loadHistoryBtn = document.getElementById('loadHistoryBtn');
+  if (loadHistoryBtn) loadHistoryBtn.addEventListener('click', loadHistory);
+
+  // Send chat message
+  const chatForm = document.getElementById('chatForm');
+  if (chatForm) {
+    chatForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const toUserSelect = document.getElementById('toUser');
+      const contentInput = document.getElementById('content');
+      if (!toUserSelect || !contentInput) return;
+      var toUser = toUserSelect.value;
+      var content = contentInput.value;
+      var payload = {
+        fromUser: senderUsername,
+        toUser: toUser,
+        content: content
+      };
+      client.send('/app/chat.send', JSON.stringify(payload), { 'content-type': 'application/json' });
+      contentInput.value = '';
+    });
+  }
+});
+</script>

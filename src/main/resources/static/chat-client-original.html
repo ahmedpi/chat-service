@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat STOMP Client</title>
+  <script src="https://cdn.jsdelivr.net/npm/webstomp-client/dist/webstomp.min.js"></script>
+</head>
+<body>
+  <h2>Send Chat Message</h2>
+  <form id="chatForm">
+    <label>From User: <input type="text" id="fromUser" value="alice"></label><br>
+    <label>To User: <input type="text" id="toUser" value="bob"></label><br>
+    <label>Content: <input type="text" id="content" value="Hello Bob!"></label><br>
+    <button type="submit">Send</button>
+  </form>
+  <div id="status"></div>
+  <h3>Received Messages:</h3>
+  <ul id="messages"></ul>
+
+  <script>
+    // Connect to your WebSocket endpoint
+    var ws = new WebSocket('ws://localhost:8086/ws-chat');
+    var client = webstomp.over(ws);
+
+    client.connect({}, function(frame) {
+      document.getElementById('status').innerText = 'Connected: ' + frame;
+
+      // Subscribe to a queue/topic if you want to receive messages
+      // client.subscribe('/queue/messages', function(message) {
+	  client.subscribe('/user/queue/messages', function(message) {
+        var msg = JSON.parse(message.body);
+        var li = document.createElement('li');
+        li.textContent = msg.fromUser + ' -> ' + msg.toUser + ': ' + msg.content;
+        document.getElementById('messages').appendChild(li);
+      });
+    }, function(error) {
+      document.getElementById('status').innerText = 'Connection error: ' + error;
+    });
+
+    // Send chat message
+    document.getElementById('chatForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fromUser = document.getElementById('fromUser').value;
+      var toUser = document.getElementById('toUser').value;
+      var content = document.getElementById('content').value;
+      var payload = {
+        fromUser: fromUser,
+        toUser: toUser,
+        content: content
+      };
+      client.send('/app/chat.send', JSON.stringify(payload), { 'content-type': 'application/json' });
+    });
+  </script>
+</body>
+</html>
